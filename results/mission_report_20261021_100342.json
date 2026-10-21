@@ -1,0 +1,51 @@
+{
+  "generated_at": "2026-10-21T03:03:42.139216+00:00",
+  "mission": {
+    "task": "search_and_report",
+    "target": {
+      "category": "passenger_car",
+      "color": "red"
+    },
+    "search_region": {
+      "area_type": "parking_area",
+      "near_reference": "R"
+    },
+    "reference": {
+      "id": "R"
+    },
+    "report_fields": [
+      "east_m",
+      "north_m",
+      "range_m",
+      "bearing_deg",
+      "uncertainty_m"
+    ]
+  },
+  "found": false,
+  "stats": {
+    "mission_time_s": 92.5,
+    "distance_flown_est_m": 188.8,
+    "tier1_counts": {
+      "frames": 1143,
+      "E1": 0,
+      "E2": 0,
+      "submitted": 0,
+      "dets": 1,
+      "frames_with_dets": 1
+    },
+    "tier1_max_p_red": 0.0,
+    "tier1_latency": {
+      "mean_ms": 37.120883202100686,
+      "p95_ms": 42.06913999992138,
+      "max_ms": 118.51760000035938,
+      "frames": 1143,
+      "over_budget_frac": 0.0008748906386701663
+    },
+    "vlm_calls": 0,
+    "evaluation_flight": {
+      "min_dist_to_target_m": 10.9,
+      "final_est_minus_true_m": 15.0
+    }
+  },
+  "summary": "No red passenger car confirmed within the search area."
+}

@@ -1,0 +1,13 @@
+train: ../train/images
+val: ../valid/images
+test: ../test/images
+
+nc: 1
+names: ['Car']
+
+roboflow:
+  workspace: luizs-workspace-jsqa0
+  project: uav-cars-i4fmw
+  version: 1
+  license: Private
+  url: https://app.roboflow.com/luizs-workspace-jsqa0/uav-cars-i4fmw/1

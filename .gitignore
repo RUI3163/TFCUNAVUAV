@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+.env
+logs/
+runs/
+debug/
+debug_cls/
+# Uncomment to keep weights out of the repo:
+# *.pt

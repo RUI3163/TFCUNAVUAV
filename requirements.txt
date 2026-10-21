@@ -1,0 +1,14 @@
+# Python 3.11. Install a CUDA build of torch FIRST, e.g.:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+numpy
+opencv-python
+pydantic>=2.5
+ultralytics>=8.3.0          # YOLO11n; also provides the YOLOv8n fallback
+transformers>=4.45          # Qwen2.5 + Qwen2-VL (pin the exact version you validate)
+accelerate
+bitsandbytes>=0.43          # 4-bit NF4 -- REQUIRED to fit the 4 GB VRAM budget
+pillow
+pytest
+# Project AirSim client (NOT classic AirSim). Install from the cloned repo:
+#   git clone https://github.com/iamaisim/ProjectAirSim
+#   pip install -e ProjectAirSim/client/python/projectairsim
