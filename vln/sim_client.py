@@ -69,6 +69,7 @@ class SimInterface:
         self._stop = threading.Event()
         self._poll_thread: Optional[threading.Thread] = None
         self._warned_size = False
+        self._depth = None
         self.altitude_m = 0.0
         self.world_ne = (0.0, 0.0)               # last sim pose (world NED); used ONLY by groundtruth nav mode
 
@@ -98,6 +99,10 @@ class SimInterface:
         # Subscriptions (callbacks only copy + return).
         self.client.subscribe(self.drone.robot_info["actual_pose"], self._on_pose)
         self.client.subscribe(self.drone.sensors[s.camera_id]["scene_camera"], self._on_image)
+        try:
+            self.client.subscribe(self.drone.sensors[s.camera_id]["depth_camera"], self._on_depth)
+        except KeyError:
+            log.warning("No depth_camera topic; optical flow falls back to altitude scaling.")
         try:
             self.client.subscribe(self.drone.sensors[s.imu_id]["imu_kinematics"], self._on_imu)
         except KeyError:
@@ -144,6 +149,20 @@ class SimInterface:
         t = time.monotonic()
         for fn in self._imu_listeners:
             fn(wz, t)
+
+    def _on_depth(self, _topic, msg) -> None:
+        try:
+            from projectairsim.utils import unpack_image
+            d = np.asarray(unpack_image(msg), dtype=np.float32)
+            if d.ndim == 3:
+                d = d[:, :, 0]
+            d[~np.isfinite(d)] = np.nan          # sky / no-hit pixels arrive as +inf
+            self._depth = d
+        except Exception as exc:                 # never let a bad depth message kill the receive thread
+            log.debug("depth decode failed: %s", exc)
+
+    def latest_depth(self):
+        return self._depth
 
     def _on_image(self, _topic, msg) -> None:
         self._publish_frame(msg)

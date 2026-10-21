@@ -63,6 +63,11 @@ def main() -> int:
                     help="centre of the search square in the R frame")
     ap.add_argument("--start-offset", type=float, nargs=2, metavar=("N", "E"), default=None,
                     help="UAV start in the R frame (disables auto-detection from the live spawn pose)")
+    ap.add_argument("--det-weights", default=None, help="detector weights, e.g. runs/detect/train-3/weights/best.pt")
+    ap.add_argument("--det-classes", type=int, nargs="+", default=None, help="class ids to keep (fine-tuned single class: 0)")
+    ap.add_argument("--imgsz", type=int, default=None, help="detector input size (debug run used 640)")
+    ap.add_argument("--det-conf", type=float, default=None)
+    ap.add_argument("--verifier-mode", choices=["color", "yesno"], default=None)
     ap.add_argument("--debug-dir", default=None, help="save annotated Tier-1 frames here (diagnostics)")
     ap.add_argument("--skip-preflight", action="store_true", help="fly even if the preflight geometry check fails")
     args = ap.parse_args()
@@ -74,6 +79,16 @@ def main() -> int:
         cfg.sim.sim_config_path = args.sim_config_path
     if args.nav_mode:
         cfg.nav.nav_mode = args.nav_mode
+    if args.det_weights:
+        cfg.perception.detector_weights = args.det_weights
+    if args.det_classes:
+        cfg.perception.det_classes = tuple(args.det_classes)
+    if args.imgsz:
+        cfg.perception.imgsz = args.imgsz
+    if args.det_conf is not None:
+        cfg.perception.det_conf = args.det_conf
+    if args.verifier_mode:
+        cfg.verifier.mode = args.verifier_mode
     if args.debug_dir:
         cfg.perception.debug_dir = args.debug_dir
     if args.r_world:

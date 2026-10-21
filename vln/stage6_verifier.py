@@ -44,7 +44,19 @@ class VLMVerifier:
         self.proc = AutoProcessor.from_pretrained(cfg.model_id, min_pixels=224 * 224, max_pixels=336 * 336)
         tk = self.proc.tokenizer
         self.yes_id, self.no_id = tk.encode("Yes")[0], tk.encode("No")[0]
-        msgs = [{"role": "user", "content": [{"type": "image"}, {"type": "text", "text": self.prompt}]}]
+        self.target_color = target_color.capitalize()
+        self.color_ids = []
+        if cfg.mode == "color":
+            names = [c for c in cfg.colors]
+            ids = [tk.encode(c)[0] for c in names]
+            if len(set(ids)) != len(ids):
+                dup = [n for n, i in zip(names, ids) if ids.count(i) > 1]
+                log.warning("Colour words share a first token (%s); their probabilities are merged.", dup)
+            if self.target_color not in names:
+                raise ValueError(f"target colour {self.target_color!r} not in VerifierCfg.colors")
+            self.color_names, self.color_ids = names, ids
+        question = cfg.color_prompt if cfg.mode == "color" else self.prompt
+        msgs = [{"role": "user", "content": [{"type": "image"}, {"type": "text", "text": question}]}]
         self.text = self.proc.apply_chat_template(msgs, tokenize=False, add_generation_prompt=True)
         log_vram("stage6 loaded")
 
@@ -58,6 +70,13 @@ class VLMVerifier:
         inp = self.proc(text=[self.text], images=[img], return_tensors="pt").to(self.model.device)
         with self.torch.inference_mode():
             logits = self.model(**inp).logits[0, -1].float()
+        if self.cfg.mode == "color":
+            ids = self.torch.tensor(self.color_ids, device=logits.device)
+            probs = self.torch.softmax(logits[ids], dim=0)
+            # merge colours that share a first token so P(target) is not double counted
+            tgt = self.color_ids[self.color_names.index(self.target_color)]
+            same = [k for k, i in enumerate(self.color_ids) if i == tgt]
+            return float(probs[same[0]]) if len(same) == 1 else float(probs[same].sum() / len(same))
         two = self.torch.stack([logits[self.yes_id], logits[self.no_id]])
         return float(self.torch.softmax(two, dim=0)[0])
 

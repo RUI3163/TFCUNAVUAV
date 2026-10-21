@@ -8,6 +8,7 @@ de-rotation (fine for slow, level lawn-mower legs); drift grows ~ linearly with 
 """
 from __future__ import annotations
 
+import logging
 import math
 import threading
 from dataclasses import dataclass
@@ -18,6 +19,17 @@ import numpy as np
 
 from .config import CameraCfg, NavCfg
 from .geometry import body_to_ned, wrap_pi
+
+log = logging.getLogger(__name__)
+
+
+def perspective_to_planar(depth: np.ndarray, cam: CameraCfg) -> np.ndarray:
+    """Range along each pixel ray -> distance along the optical axis (what flow scaling needs)."""
+    h, w = depth.shape[:2]
+    u = np.arange(w, dtype=np.float32) - cam.cx
+    v = np.arange(h, dtype=np.float32) - cam.cy
+    r2 = u[None, :] ** 2 + v[:, None] ** 2
+    return depth * (cam.fx / np.sqrt(cam.fx ** 2 + r2))
 
 
 @dataclass(frozen=True)
@@ -41,6 +53,8 @@ class DeadReckoner:
         self._dist = 0.0
         self._flow_ok = False
         self._prev: Optional[np.ndarray] = None
+        self._prev_depth: Optional[np.ndarray] = None
+        self._depth_checked = False
         self._last_imu_t: Optional[float] = None
         self.lost_frames = 0
 
@@ -62,16 +76,33 @@ class DeadReckoner:
                 self._yaw_init = True
 
     # ---- optical flow ------------------------------------------------------
-    def update_frame(self, bgr: np.ndarray) -> PoseEstimate:
+    def update_frame(self, bgr: np.ndarray, depth: Optional[np.ndarray] = None) -> PoseEstimate:
         gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
+        planar = self._prep_depth(depth, gray.shape) if (depth is not None and self.nav.use_depth_scale) else None
         with self._lock:
             alt, yaw = self._alt, self._yaw
+        if planar is not None and not self._depth_checked and alt > 5.0:
+            self._depth_checked = True
+            h, w = depth.shape[:2]
+            c = np.nanmedian(depth[h // 2 - 8:h // 2 + 8, w // 2 - 8:w // 2 + 8])
+            k = np.nanmedian(np.concatenate([depth[:12, :12].ravel(), depth[:12, -12:].ravel(),
+                                             depth[-12:, :12].ravel(), depth[-12:, -12:].ravel()]))
+            log.info("Depth check at alt %.1f m: centre %.1f m, corners %.1f m (corner/centre %.2f; ~1.5 over flat "
+                     "ground = PERSPECTIVE, ~1.0 = PLANAR; CameraCfg.depth_is_perspective=%s)",
+                     alt, c, k, k / c if c else float("nan"), self.cam.depth_is_perspective)
         if self._prev is not None and alt > 0.5:
-            self._integrate_flow(self._prev, gray, alt, yaw)
-        self._prev = gray
+            self._integrate_flow(self._prev, gray, alt, yaw, self._prev_depth)
+        self._prev, self._prev_depth = gray, planar
         return self.state()
 
-    def _integrate_flow(self, prev: np.ndarray, cur: np.ndarray, alt: float, yaw: float) -> None:
+    def _prep_depth(self, depth: np.ndarray, shape) -> np.ndarray:
+        d = depth
+        if d.shape[:2] != shape[:2]:
+            d = cv2.resize(d, (shape[1], shape[0]), interpolation=cv2.INTER_NEAREST)
+        return perspective_to_planar(d, self.cam) if self.cam.depth_is_perspective else d
+
+    def _integrate_flow(self, prev: np.ndarray, cur: np.ndarray, alt: float, yaw: float,
+                        prev_depth: Optional[np.ndarray] = None) -> None:
         pts = cv2.goodFeaturesToTrack(prev, self.nav.flow_max_corners, 0.01, 8)
         ok = False
         if pts is not None and len(pts) >= self.nav.flow_min_features:
@@ -79,11 +110,20 @@ class DeadReckoner:
             good = st.reshape(-1) == 1
             if good.sum() >= self.nav.flow_min_features:
                 d = (nxt - pts).reshape(-1, 2)[good]
-                du, dv = float(np.median(d[:, 0])), float(np.median(d[:, 1]))
+                p0 = pts.reshape(-1, 2)[good]
+                # Ground displacement per feature = pixel flow * (depth of THAT feature) / f.
                 # Features move opposite to the camera: camera forward -> scene moves toward image bottom (+v);
                 # camera right -> scene moves toward image left (-u).
-                fwd = dv * alt / self.cam.fy
-                right = -du * alt / self.cam.fx
+                z = np.full(len(d), alt, dtype=np.float32)
+                if prev_depth is not None:
+                    ui = np.clip(p0[:, 0].round().astype(int), 0, prev_depth.shape[1] - 1)
+                    vi = np.clip(p0[:, 1].round().astype(int), 0, prev_depth.shape[0] - 1)
+                    zd = prev_depth[vi, ui]
+                    valid = np.isfinite(zd) & (zd > 0.5) & (zd < 4.0 * max(alt, 5.0))
+                    if valid.sum() >= self.nav.flow_min_features:
+                        z, d = zd[valid], d[valid]
+                fwd = float(np.median(d[:, 1] * z / self.cam.fy))
+                right = float(np.median(-d[:, 0] * z / self.cam.fx))
                 dn, de = body_to_ned(fwd, right, yaw)
                 with self._lock:
                     self._n += dn

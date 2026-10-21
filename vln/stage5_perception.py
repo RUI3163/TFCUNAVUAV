@@ -143,6 +143,7 @@ class PerceptionWorker(threading.Thread):
         self.on_candidate, self.stop = on_candidate, stop
         self.latencies: List[float] = []
         self.counts = {"frames": 0, "E1": 0, "E2": 0, "submitted": 0, "dets": 0, "frames_with_dets": 0}
+        self.timing: Dict[str, List[float]] = {"flow": [], "det": [], "cls": []}
         self.max_p_red = 0.0                                     # best red-car probability seen on ANY detection
         self._dbg_n = 0
         self._last_sub: Optional[Tuple[float, Tuple[float, float]]] = None
@@ -163,8 +164,12 @@ class PerceptionWorker(threading.Thread):
                 continue
             last = frame.idx
             t0 = time.perf_counter()
-            est = self.est.update_frame(frame.bgr)
+            depth = self.sim.latest_depth() if hasattr(self.sim, "latest_depth") else None
+            est = self.est.update_frame(frame.bgr, depth) if depth is not None else self.est.update_frame(frame.bgr)
+            t1 = time.perf_counter()
             dets = self.det(frame.bgr)
+            t2 = time.perf_counter()
+            t_cls = 0.0
             cand: Optional[Candidate] = None
             probs_dbg: Optional[np.ndarray] = None
             if dets:
@@ -173,7 +178,9 @@ class PerceptionWorker(threading.Thread):
                 crops = [crop_box(frame.bgr, d.box, p.crop_pad) for d in dets]
                 keep = [i for i, c in enumerate(crops) if c.size > 0]
                 if keep:
+                    tc0 = time.perf_counter()
                     probs = self.clf([crops[i] for i in keep])
+                    t_cls = time.perf_counter() - tc0
                     probs_dbg = probs
                     self.max_p_red = max(self.max_p_red, float(probs[:, 0].max()))
                     j = int(np.argmax(probs[:, 0]))              # most red-car-like detection
@@ -189,6 +196,9 @@ class PerceptionWorker(threading.Thread):
                                          crop_box(frame.bgr, d.box, self.cfg.verifier.context_pad))
             lat = (time.perf_counter() - t0) * 1000.0
             self.latencies.append(lat)
+            self.timing["flow"].append((t1 - t0) * 1000.0)
+            self.timing["det"].append((t2 - t1) * 1000.0)
+            self.timing["cls"].append(t_cls * 1000.0)
             self.counts["frames"] += 1
             if lat > p.latency_budget_ms:
                 log.warning("Tier-1 latency %.0f ms exceeds %.0f ms budget", lat, p.latency_budget_ms)
@@ -222,4 +232,6 @@ class PerceptionWorker(threading.Thread):
             return {}
         a = np.asarray(self.latencies)
         return {"mean_ms": float(a.mean()), "p95_ms": float(np.percentile(a, 95)), "max_ms": float(a.max()),
-                "frames": int(a.size), "over_budget_frac": float((a > self.cfg.perception.latency_budget_ms).mean())}
+                "frames": int(a.size), "over_budget_frac": float((a > self.cfg.perception.latency_budget_ms).mean()),
+                "mean_flow_ms": float(np.mean(self.timing["flow"])), "mean_det_ms": float(np.mean(self.timing["det"])),
+                "mean_cls_ms": float(np.mean(self.timing["cls"]))}

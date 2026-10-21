@@ -1,0 +1,1 @@
+{"task":"search_and_report","target":{"category":"passenger_car","color":"red"},"search_region":{"area_type":"parking_area","near_reference":"R"},"reference":{"id":"R"},"report_fields":["east_m","north_m","range_m","bearing_deg","uncertainty_m"]}

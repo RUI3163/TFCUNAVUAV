@@ -24,8 +24,9 @@ def main() -> None:
     ap.add_argument("--data", default="data/cls")
     ap.add_argument("--color", default="red")
     ap.add_argument("--max-per-class", type=int, default=100)
+    ap.add_argument("--mode", choices=["color", "yesno"], default="color")
     a = ap.parse_args()
-    cfg = VerifierCfg()
+    cfg = VerifierCfg(mode=a.mode)
     v = VLMVerifier(cfg, a.color)
     scores, labels, lat = [], [], []
     for cls in ("red_car", "other_car", "not_car"):

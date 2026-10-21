@@ -49,6 +49,10 @@ class CameraCfg:
     height: int = 225
     hfov_deg: float = 90.0
     swap_rgb: bool = False       # set True if saved frames show wrong colours (red car looks blue)
+    # The sim's depth_camera topic: your robot config has depth-PLANAR capture disabled and depth-PERSPECTIVE
+    # enabled, so assume perspective (range along the ray). The mission logs centre-vs-corner depth once at
+    # altitude so you can confirm (perspective: corners read ~1.5x the centre over flat ground).
+    depth_is_perspective: bool = True
 
     @property
     def fx(self) -> float:  # focal length in pixels (square pixels => fy == fx)
@@ -143,6 +147,7 @@ class NavCfg:
     gyro_yaw_sign: float = 1.0      # flip to -1 if your IMU frame integrates the wrong way
     flow_max_corners: int = 150
     flow_min_features: int = 8
+    use_depth_scale: bool = True    # per-feature metric scale from the nadir depth image (fixes parallax over trees/roofs)
     climb_tol_m: float = 0.5
 
 
@@ -177,6 +182,11 @@ class VerifierCfg:
     context_pad: float = 0.5                        # extra context around the bbox for the VLM crop
     min_side_px: int = 224
     p_yes_threshold: float = 0.5
+    # "color": ask the VLM for the vehicle colour and use P(target colour) (more discriminative in your debug run:
+    #          a blue car got yes/no p_yes=0.71 but colour Blue=0.80).  "yesno": original single Yes/No question.
+    mode: str = "color"
+    colors: tuple = ("Red", "Blue", "White", "Black", "Silver", "Gray", "Green", "Yellow", "Orange", "Brown")
+    color_prompt: str = "What is the colour of the vehicle in the centre of this image? Answer with exactly one word."
     consensus_n: int = 3                            # N consecutive agreeing verified frames
     agree_radius_m: float = 3.0
     prompt: str = (
